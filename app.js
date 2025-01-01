@@ -9,7 +9,7 @@ const {listingSchema,reviewSchema}=require("./schema.js");
 
 const Review=require("./models/review.js");
 const listings=require("./routes/listing.js");
-
+const reviews=require("./routes/review.js");
 
 const path=require("path");
 app.set("view engine","ejs");
@@ -25,6 +25,9 @@ app.engine("ejs",ejsMate);
 
 
 app.use(express.static(path.join(__dirname,"/public")));
+
+const session=require("express-session");
+const flash=require("connect-flash");
 async function main() {
 
     await mongoose.connect('mongodb://127.0.0.1:27017/wanderlust')   
@@ -36,9 +39,31 @@ main()
 })
 .catch(err => console.log(err));
 
+
+const sessionOptions={
+    secret:"mysupersecretcode",
+    resave:false,
+    saveUninitialized:true ,
+    cookie:{
+        expires:Date.now()+7*24*60*60*1000,
+        maxAge:7*24*60*60*1000,
+        httpOnly:true,
+    } ,
+};
+
 app.get("/",(req,res)=>{
     res.send("Hi,I am root");
 });
+
+app.use(session(sessionOptions));
+app.use(flash());
+
+app.use((req,res,next)=>{
+    res.locals.success=req.flash("success");
+    res.locals.error=req.flash("error");
+    next();
+});
+
 
 //adding document to listing using get request/
 
@@ -57,47 +82,9 @@ app.get("/",(req,res)=>{
 // });
 
 
-const validateReview=(req,res,next)=>
-    {
-        let {error}=reviewSchema.validate(req.body);
-        if(error)
-        {
-            let errMsg=error.details.map((el)=>el.message).join(",");
-            throw new ExpressError(400,errMsg);
-        }
-       else{
-        next();
-       }
-    }
 
 app.use("/listings",listings);
-
-//Reviews
-// Post Review Route
-app.post("/listings/:id/reviews",validateReview,wrapAsync(async(req,res)=>{
-   let listing= await Listing.findById(req.params.id);
-   let newReview=new Review(req.body.review);
-
-   listing.reviews.push(newReview);
-   await newReview.save();
-   await listing.save();
-    res.redirect(`/listings/${listing._id}`);
-}));
-
-//Post Review delete
-app.delete("/listings/:id/reviews/:reviewId",wrapAsync(async(req,res)=>{
-    let {id,reviewId}=req.params;
-    await Listing.findByIdAndUpdate(id,{$pull:{reviews:reviewId}});
-    await Review.findByIdAndDelete(reviewId);
-
-    res.redirect(`/listings/${id}`);
-
-}));
-
-
-
-
-
+app.use("/listings/:id/reviews",reviews);
 
 //here if any request will not be matched then we will throw custom error
 app.all("*",(req,res,next)=>{
